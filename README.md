@@ -1,6 +1,6 @@
 # Hati: Platform Multi-Agen Berkecepatan Tinggi untuk Manajemen Suasana Hati
 
-![Hati Logo](https://via.placeholder.com/200x100/FF6B6B/FFFFFF?text=HATI)
+![Hati Logo](placeholder.png)
 
 **Hati** adalah platform AI berkecepatan tinggi yang menggunakan arsitektur multi-agen untuk memberikan respons yang empatik dan relevan sesuai dengan suasana hati pengguna. Dibangun dengan **Groq Cloud API** sebagai mesin utama untuk mencapai latensi yang sangat rendah.
 
