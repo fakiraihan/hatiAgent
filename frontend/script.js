@@ -1001,7 +1001,7 @@ class AmbientMusic {
         this.presets = {
             rain: {
                 name: 'Rain',
-                url: 'https://cdn.freesound.org/previews/316/316847_5123451-lq.mp3',
+                url: 'https://cdn.pixabay.com/download/audio/2024/10/30/audio_42e6870f29.mp3',
                 icon: 'fas fa-cloud-rain'
             },
             forest: {
@@ -1011,12 +1011,12 @@ class AmbientMusic {
             },
             cafe: {
                 name: 'Cafe',
-                url: 'https://cdn.freesound.org/previews/567/567067_2097560-lq.mp3',
+                url: 'https://assets.mixkit.co/active_storage/sfx/452/452.wav',
                 icon: 'fas fa-coffee'
             },
             ocean: {
                 name: 'Ocean',
-                url: 'https://cdn.freesound.org/previews/316/316847_5123451-lq.mp3',
+                url: 'https://assets.mixkit.co/active_storage/sfx/1195/1195.wav',
                 icon: 'fas fa-water'
             },
             city: {

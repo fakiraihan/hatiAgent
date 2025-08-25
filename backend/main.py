@@ -130,7 +130,7 @@ async def get_background_music_tracks():
                 "id": "rain",
                 "name": "Rain Ambience",
                 "description": "Gentle rain sounds for relaxation",
-                "url": "https://cdn.freesound.org/previews/316/316847_5123451-lq.mp3",
+                "url": "https://cdn.pixabay.com/download/audio/2024/10/30/audio_42e6870f29.mp3",
                 "type": "ambient"
             },
             {

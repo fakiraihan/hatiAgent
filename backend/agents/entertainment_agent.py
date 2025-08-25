@@ -110,20 +110,40 @@ Use null for missing information."""
             content = {}
             total_items = 0
             
-            # Get GIFs based on mood
-            if content_type in ["mixed", "gifs"]:
-                gifs = await self._get_mood_gifs(mood, intensity)
+            # Handle content type specifically
+            if content_type == "jokes":
+                # For jokes, only show meme GIFs, no movies
+                gifs = await self._get_meme_gifs(mood, intensity)
                 content["gifs"] = gifs
                 total_items += len(gifs)
-            
-            # Get movie/TV recommendations
-            if content_type in ["mixed", "movies"]:
+                
+                # Also get joke content
+                jokes = await self._get_mood_jokes(mood)
+                content["jokes"] = jokes
+                total_items += len(jokes)
+                
+            elif content_type == "movies":
+                # For movies, only movies
                 movies = await self._get_mood_movies(mood, intensity, preferences_data)
                 content["movies"] = movies
                 total_items += len(movies)
-            
-            # Generate mood-appropriate jokes/quotes
-            if content_type in ["mixed", "jokes"]:
+                
+            elif content_type == "gifs":
+                # For GIFs, only GIFs
+                gifs = await self._get_mood_gifs(mood, intensity)
+                content["gifs"] = gifs
+                total_items += len(gifs)
+                
+            else:
+                # For mixed or default, get all types
+                gifs = await self._get_mood_gifs(mood, intensity)
+                content["gifs"] = gifs
+                total_items += len(gifs)
+                
+                movies = await self._get_mood_movies(mood, intensity, preferences_data)
+                content["movies"] = movies
+                total_items += len(movies)
+                
                 jokes = await self._get_mood_jokes(mood)
                 content["jokes"] = jokes
                 total_items += len(jokes)
@@ -213,6 +233,74 @@ Use null for missing information."""
             # Return empty list instead of failing completely
             return []
     
+    async def _get_meme_gifs(self, mood: str, intensity: str, limit: int = 5) -> List[Dict]:
+        """Get meme GIFs specifically for jokes"""
+        try:
+            # Meme-specific search terms
+            meme_terms = [
+                "meme", "funny meme", "reaction meme", "hilarious",
+                "lol", "comedy", "funny reaction", "meme face",
+                "internet meme", "viral meme", "funny gif", "humor"
+            ]
+            
+            import random
+            search_term = random.choice(meme_terms)
+            
+            # Add random offset for variety
+            offset = random.randint(0, 50)
+            
+            self.log_activity(f"Searching meme GIFs with term '{search_term}' and offset {offset}")
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.giphy_base_url}/search",
+                    params={
+                        "api_key": self.giphy_api_key,
+                        "q": search_term,
+                        "limit": limit * 2,  # Get more to filter better ones
+                        "offset": offset,
+                        "rating": "g",  # Keep it clean
+                        "lang": "en"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    all_gifs = data.get("data", [])
+                    
+                    self.log_activity(f"Giphy returned {len(all_gifs)} meme GIFs for term '{search_term}'")
+                    
+                    # Randomly shuffle and select best ones
+                    if all_gifs:
+                        random.shuffle(all_gifs)
+                        selected_gifs = all_gifs[:limit]
+                    else:
+                        selected_gifs = []
+                    
+                    gifs = []
+                    for gif in selected_gifs:
+                        gif_data = {
+                            "title": gif.get("title", "Funny Meme"),
+                            "url": gif["images"]["original"]["url"],
+                            "preview_url": gif["images"]["fixed_height_small"]["url"],
+                            "source": "giphy",
+                            "rating": gif.get("rating", "g"),
+                            "search_term": search_term,
+                            "mood": "funny",
+                            "type": "meme"
+                        }
+                        gifs.append(gif_data)
+                        self.log_activity(f"Added meme GIF: {gif.get('title', 'Untitled')} for jokes")
+                    
+                    return gifs
+                else:
+                    self.log_activity(f"Giphy API error for memes: {response.status_code} - {response.text}", "ERROR")
+                    return []
+                    
+        except Exception as e:
+            self.log_activity(f"Error fetching meme GIFs: {e}", "ERROR")
+            return []
+
     async def _get_mood_movies(self, mood: str, intensity: str, preferences: dict = None, limit: int = 3) -> List[Dict]:
         """Get movie recommendations based on mood and preferences from TMDb API"""
         try:

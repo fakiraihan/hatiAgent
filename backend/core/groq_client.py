@@ -80,23 +80,42 @@ class GroqClient:
             Dictionary with agent decision and reasoning
         """
         system_prompt = """
-        Analisis pesan user dan tentukan agen yang tepat:
+        Analisis pesan user dan tentukan agen yang tepat dengan SANGAT KETAT:
 
         Pilihan agen:
-        - "music": untuk rekomendasi musik/lagu berdasarkan mood
-        - "entertainment": untuk hiburan/meme/film/jokes/konten lucu  
-        - "relaxation": untuk relaksasi/tempat tenang/tempat jalan-jalan/lokasi rekreasi/maps/tempat wisata
-        - "reflection": untuk curhat/refleksi/dukungan emosional
+        - "music": HANYA jika user EKSPLISIT minta musik/lagu ("cariin musik", "minta lagu", "play musik")
+        - "entertainment": HANYA jika user EKSPLISIT minta hiburan konten ("kasih jokes", "cariin meme", "recommend film", "mau nonton movie", "show me funny gifs")
+        - "relaxation": HANYA jika user EKSPLISIT minta tempat/lokasi ("mau jalan-jalan", "rekomendasi tempat", "cari lokasi", "tempat wisata di...")
+        - "reflection": DEFAULT untuk semua percakapan, curhat, tanya-tanya, diskusi topik apapun
 
-        Contoh keyword yang mengarah ke relaxation:
-        - "tempat jalan jalan", "rekomendasi tempat", "mau ke mana", "tempat wisata"
-        - "tempat tenang", "tempat santai", "lokasi relaksasi", "tempat bagus"
-        - "stress butuh jalan", "pengen keluar", "mau refreshing"
+        SUPER PENTING - JANGAN SALAH DELEGASI:
+        ❌ "selingkuh", "balas dendam", "hubungan" = INI BUKAN entertainment, ini reflection!
+        ❌ "mantap", "bisaaa", "gimana kalau" = INI BUKAN entertainment, ini reflection!
+        ❌ Ngobrol biasa, sharing cerita, tanya pendapat = reflection
+        ❌ Diskusi topik emosional/personal = reflection
 
-        PENTING untuk relaxation agent:
+        ✅ Entertainment HANYA jika ada kata kunci EKSPLISIT:
+        - "kasih aku jokes", "mau ketawa", "cariin meme lucu"
+        - "recommend film", "mau nonton", "suggest movie"
+        - "show me gifs", "animated funny"
+
+        ✅ Music HANYA jika ada kata kunci EKSPLISIT:
+        - "cariin musik", "minta lagu", "play song", "music recommendation"
+
+        ✅ Relaxation HANYA jika ada kata kunci EKSPLISIT:
+        - "tempat jalan-jalan", "mau ke mana", "lokasi wisata", "recommend place"
+
+        PENTING untuk entertainment agent (jika benar-benar dipanggil):
+        - Jika user minta "jokes", "lucu", "meme", "humor", set type="jokes"
+        - Jika user minta "film", "movie", "bioskop", set type="movies"  
+        - Jika user minta "gif", "animated", set type="gifs"
+        - Jika tidak spesifik, set type="mixed"
+
+        PENTING untuk relaxation agent (jika benar-benar dipanggil):
         - Jika ada nama kota/daerah (Jakarta, Bandung, Surabaya, Yogyakarta, Bali), gunakan itu sebagai location
         - Jika tidak ada nama kota spesifik, gunakan "Jakarta" sebagai default location
-        - Jangan gunakan kata "outdoor", "indoor", "cafe", "mall" sebagai location
+
+        DALAM KERAGUAN, SELALU PILIH "reflection"!
 
         Response JSON:
         {
@@ -105,6 +124,7 @@ class GroqClient:
             "parameters": {
                 "location": "nama_kota_atau_Jakarta_jika_tidak_ada",
                 "place_type": "outdoor/indoor/mixed", 
+                "type": "jokes/movies/gifs/mixed",
                 "intensity": "low/medium/high"
             },
             "reasoning": "alasan_singkat"
