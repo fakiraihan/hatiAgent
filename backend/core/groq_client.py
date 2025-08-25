@@ -158,33 +158,36 @@ class GroqClient:
         Agent yang digunakan: {agent_type}
         Data yang kamu dapat: {json.dumps(specialist_data, indent=2)}
 
+        ATURAN BERDASARKAN AGENT TYPE:
+
+        REFLECTION AGENT:
+        - HANYA gunakan data main_response dari reflection agent
+        - JANGAN tambahkan rekomendasi musik/hiburan/tempat
+        - Fokus pada percakapan empati yang natural
+        - Response sebagai teman yang mendengarkan
+
+        MUSIC AGENT:
+        - Boleh menyebutkan ada rekomendasi musik
+        - Cukup bilang "Aku punya rekomendasi musik yang tepat untuk mood kamu!"
+        - JANGAN sebutkan detail lagu - biarkan frontend tampilkan sebagai cards
+
+        ENTERTAINMENT AGENT:
+        - Boleh menyebutkan ada rekomendasi hiburan
+        - Cukup bilang "Aku punya rekomendasi hiburan yang cocok!"
+        - JANGAN sebutkan detail konten - biarkan frontend tampilkan sebagai cards
+
+        RELAXATION AGENT:
+        - Boleh menyebutkan ada rekomendasi tempat
+        - Cukup bilang "Aku punya rekomendasi tempat bagus!"
+        - JANGAN sebutkan detail tempat - biarkan frontend tampilkan sebagai cards
+
         Buatlah respons yang:
         - Hangat dan mendukung sesuai mood user
-        - Jika ada musik dari music agent, JANGAN sebutkan detail lagu atau link - biarkan frontend yang tampilkan sebagai music cards
-        - Jika ada tempat dari relaxation agent, JANGAN sebutkan detail tempat - biarkan frontend yang tampilkan sebagai place cards
-        - Jika ada movies/GIFs dari entertainment agent, JANGAN sebutkan detail konten - biarkan frontend yang tampilkan sebagai content cards
         - Singkat dan natural (maksimal 2-3 kalimat)
         - Pakai bahasa Indonesia yang natural
-        - Fokus pada empati dan dukungan, bukan detail konten
+        - Fokus pada empati dan dukungan
 
-        Khusus untuk rekomendasi musik:
-        - Cukup bilang "Aku punya rekomendasi musik yang tepat untuk mood kamu!"
-        - Jangan sebutkan judul lagu atau artis - akan ditampilkan sebagai cards
-        - Berikan motivasi singkat kenapa musik bagus untuk mood mereka
-
-        Khusus untuk rekomendasi tempat:
-        - Cukup bilang "Aku punya rekomendasi tempat bagus di [kota]!" 
-        - Jangan sebutkan nama tempat spesifik - akan ditampilkan sebagai cards
-        - Berikan motivasi singkat kenapa jalan-jalan bagus untuk mood mereka
-
-        Khusus untuk hiburan (movies/GIFs):
-        - Cukup bilang "Aku punya rekomendasi film/hiburan yang cocok untuk mood kamu!"
-        - Jangan sebutkan judul film atau detail - akan ditampilkan sebagai cards
-        - Berikan motivasi singkat kenapa hiburan bagus untuk mood mereka
-
-        Contoh musik: "Aku punya rekomendasi musik yang sempurna untuk menghibur hatimu! Musik memang punya kekuatan luar biasa untuk memperbaiki mood."
-        Contoh tempat: "Aku punya rekomendasi tempat bagus di Bandung! Jalan-jalan bisa bantu menghilangkan stres dan bikin pikiran lebih fresh."
-        Contoh hiburan: "Aku punya rekomendasi film yang pas banget untuk mood kamu! Menonton sesuatu yang bagus bisa jadi pelarian yang menyenangkan."
+        PENTING: Untuk reflection agent, JANGAN tambahkan rekomendasi apa pun yang tidak ada dalam data specialist!
         """
         
         messages = [

@@ -39,14 +39,16 @@ class MusicAgent(MemoryAgent):
     async def process(self, user_message: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process music recommendation request with memory and caching
+        Support untuk band-specific recommendations dan general mood-based
         
         Returns:
             {
                 "recommendations": [...],
                 "mood_analysis": "detected mood",
-                "genre": "recommended genre",
+                "genre": "recommended genre", 
                 "total_found": int,
-                "personalized": bool
+                "personalized": bool,
+                "artist_requested": str (jika ada band specific)
             }
         """
         try:
@@ -56,6 +58,194 @@ class MusicAgent(MemoryAgent):
             # Get session ID for personalization
             session_id = parameters.get("session_id", "default")
             
+            # Check if user mentioned specific artist/band
+            mentioned_artist = await self._extract_artist_from_message(user_message)
+            
+            if mentioned_artist:
+                # Handle artist-specific recommendations
+                return await self._get_artist_based_recommendations(mentioned_artist, user_message, parameters, session_id)
+            else:
+                # Handle general mood-based recommendations
+                return await self._get_mood_based_recommendations(user_message, parameters, session_id)
+                
+        except Exception as e:
+            self.log_activity(f"Error processing music request: {e}", "ERROR")
+            return self._fallback_response(user_message)
+
+    async def _extract_artist_from_message(self, message: str) -> str:
+        """Extract artist/band name from user message using LLM"""
+        try:
+            system_prompt = """
+            Ekstrak nama artis/band dari pesan user. Jika tidak ada nama artis yang disebutkan, return null.
+            
+            ATURAN:
+            - Hanya ekstrak nama artis/penyanyi/band yang jelas disebutkan
+            - Jangan ekstrak kata-kata seperti "lagu", "musik", "sedih", "happy", dll
+            - Jika user hanya minta rekomendasi tanpa sebutkan artis, return null
+            - Return nama artis persis seperti yang disebutkan user
+            
+            Contoh:
+            - "lagu pamungkas dong" → "pamungkas"
+            - "kaya lagu noah gitu" → "noah" 
+            - "pengen denger taylor swift" → "taylor swift"
+            - "lagu sedih dong" → null
+            - "kasih rekomendasi musik" → null
+            
+            Response dalam format JSON:
+            {"artist": "nama_artis_atau_null"}
+            """
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Pesan: {message}"}
+            ]
+            
+            # Import groq_client
+            from backend.core.groq_client import groq_client
+            
+            response = await groq_client.chat_completion(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=100,
+                response_format={"type": "json_object"}
+            )
+            
+            import json
+            result = json.loads(response)
+            artist = result.get("artist")
+            
+            # Return None if artist is null or empty
+            if artist and artist.lower() not in ["null", "none", ""]:
+                self.log_activity(f"LLM extracted artist: '{artist}' from message: '{message[:50]}...'")
+                return artist.strip()
+            else:
+                return None
+                
+        except Exception as e:
+            self.log_activity(f"Error in LLM artist extraction: {e}", "ERROR")
+            # Fallback to simple keyword matching
+            return self._fallback_artist_extraction(message)
+    
+    def _fallback_artist_extraction(self, message: str) -> str:
+        """Fallback artist extraction using simple keyword matching"""
+        # Known popular artists for fallback
+        known_artists = [
+            "pamungkas", "noah", "sheila on 7", "tulus", "hindia", "raisa", "afgan",
+            "feast", "ungu", "d'masiv", "peterpan", "nidji", "gigi", "slank",
+            "coldplay", "taylor swift", "ed sheeran", "bruno mars", "maroon 5"
+        ]
+        
+        clean_message = message.lower()
+        for artist in known_artists:
+            if artist in clean_message:
+                return artist
+        
+        return None
+
+    async def _get_artist_based_recommendations(self, artist_name: str, user_message: str, parameters: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+        """Get recommendations based on specific artist"""
+        try:
+            self.log_activity(f"Searching for artist-based recommendations: {artist_name}")
+            
+            # Search for the artist
+            results = self.spotify.search(q=f"artist:{artist_name}", type="artist", limit=1)
+            
+            if not results["artists"]["items"]:
+                # Fallback to general search
+                self.log_activity(f"Artist '{artist_name}' not found, falling back to general search")
+                return await self._get_mood_based_recommendations(user_message, parameters, session_id)
+            
+            artist = results["artists"]["items"][0]
+            artist_id = artist["id"]
+            
+            # Get artist's top tracks
+            top_tracks = self.spotify.artist_top_tracks(artist_id, country='ID')["tracks"]
+            
+            # Get related artists for variety (with error handling)
+            related_tracks = []
+            try:
+                related_artists = self.spotify.artist_related_artists(artist_id)["artists"][:3]
+                
+                # Get some tracks from related artists
+                for related_artist in related_artists:
+                    try:
+                        related_top = self.spotify.artist_top_tracks(related_artist["id"], country='ID')["tracks"][:2]
+                        related_tracks.extend(related_top)
+                    except Exception as e:
+                        self.log_activity(f"Error getting tracks for related artist {related_artist['name']}: {e}")
+                        continue
+                        
+            except Exception as e:
+                self.log_activity(f"Error getting related artists for {artist['name']}: {e}")
+                # Continue without related tracks
+            
+            # Combine tracks (prioritize main artist)
+            all_tracks = top_tracks[:8] + related_tracks[:2]
+            
+            recommendations = []
+            for track in all_tracks:
+                # Get album cover image
+                album_images = track["album"].get("images", [])
+                cover_url = None
+                if album_images:
+                    for img in album_images:
+                        if img.get("height") and 200 <= img["height"] <= 400:
+                            cover_url = img["url"]
+                            break
+                    if not cover_url:
+                        cover_url = album_images[0]["url"]
+                
+                recommendation = {
+                    "title": track["name"],
+                    "artist": ", ".join([artist["name"] for artist in track["artists"]]),
+                    "album": track["album"]["name"],
+                    "url": track["external_urls"]["spotify"],
+                    "preview_url": track.get("preview_url"),
+                    "cover_url": cover_url,
+                    "release_date": track["album"].get("release_date", ""),
+                    "popularity": track.get("popularity", 0),
+                    "duration_ms": track.get("duration_ms", 0),
+                    "explicit": track.get("explicit", False)
+                }
+                recommendations.append(recommendation)
+            
+            # Get artist genres for context
+            artist_genres = artist.get("genres", [])
+            main_genre = artist_genres[0] if artist_genres else "pop"
+            
+            mood = parameters.get("mood", "happy")
+            
+            response = {
+                "recommendations": recommendations,
+                "mood_analysis": mood,
+                "genre": main_genre,
+                "total_found": len(recommendations),
+                "personalized": True,
+                "artist_requested": artist["name"],
+                "artist_info": {
+                    "name": artist["name"],
+                    "genres": artist_genres,
+                    "popularity": artist.get("popularity", 0),
+                    "followers": artist.get("followers", {}).get("total", 0)
+                },
+                "search_parameters": {
+                    "artist": artist_name,
+                    "mood": mood,
+                    "type": "artist_based"
+                },
+                "from_cache": False
+            }
+            
+            return response
+            
+        except Exception as e:
+            self.log_activity(f"Error in artist-based search for '{artist_name}': {e}", "ERROR")
+            # Fallback to mood-based recommendations
+            return await self._get_mood_based_recommendations(user_message, parameters, session_id)
+
+    async def _get_mood_based_recommendations(self, user_message: str, parameters: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+        """Get general mood-based recommendations (original logic)"""
+        try:
             # Extract mood and genre from parameters
             mood = parameters.get("mood", "neutral")
             
@@ -139,7 +329,7 @@ class MusicAgent(MemoryAgent):
             return response
             
         except Exception as e:
-            self.log_activity(f"Error processing music request: {e}", "ERROR")
+            self.log_activity(f"Error in mood-based search: {e}", "ERROR")
             return self._fallback_response(user_message)
     
     async def _search_tracks_by_mood(self, mood: str, genre: str, intensity: str, context: str = "", limit: int = 10) -> List[Dict]:

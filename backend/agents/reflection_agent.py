@@ -19,56 +19,45 @@ class ReflectionAgent(BaseAgent):
     def __init__(self):
         super().__init__("reflection")
         self.conversation_history = {}  # Store conversation context per user
+        self.conversation_summaries = {}  # Store conversation summaries per user
     
     async def process(self, user_message: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process reflection conversation request
+        Process reflection conversation request with context awareness
         
         Returns:
             {
-                "reflection": {
-                    "insights": [...],
-                    "questions": [...],
-                    "suggestions": [...]
-                },
-                "conversation_type": "deep/casual/guided",
-                "emotional_context": "detected emotions",
-                "follow_up_prompts": [...]
+                "main_response": "conversational response",
+                "conversation_type": "supportive/empathetic",
+                "emotional_context": "detected emotions", 
+                "session_context": {...}
             }
         """
         try:
             mood = parameters.get("mood", "contemplative")
-            conversation_type = parameters.get("type", "deep")
-            topic = parameters.get("topic", "general")
+            session_id = parameters.get("session_id", "default")
             
-            self.log_activity(f"Starting reflection conversation: {conversation_type}, mood: {mood}")
+            self.log_activity(f"Reflection conversation: mood: {mood}, session: {session_id}")
             
-            # Generate reflection insights
-            insights = await self._generate_insights(user_message, mood, topic)
+            # Get conversation history for this session
+            conversation_context = self.conversation_history.get(session_id, [])
             
-            # Generate thoughtful questions
-            questions = await self._generate_reflection_questions(user_message, mood)
+            # Generate contextual conversational response
+            main_response = await self._generate_conversational_response(
+                user_message, mood, conversation_context, session_id
+            )
             
-            # Provide suggestions for further reflection
-            suggestions = await self._generate_suggestions(mood, topic)
-            
-            # Create follow-up prompts
-            follow_ups = await self._generate_follow_up_prompts(user_message, mood)
+            # Update conversation history
+            await self._update_conversation_history(session_id, user_message, main_response)
             
             return {
-                "reflection": {
-                    "insights": insights,
-                    "questions": questions,
-                    "suggestions": suggestions
-                },
-                "conversation_type": conversation_type,
+                "main_response": main_response,
+                "conversation_type": "supportive",
                 "emotional_context": mood,
-                "follow_up_prompts": follow_ups,
                 "session_context": {
-                    "topic": topic,
                     "mood": mood,
                     "message_length": len(user_message),
-                    "reflection_depth": conversation_type
+                    "conversation_turns": len(conversation_context)
                 }
             }
             
@@ -76,167 +65,264 @@ class ReflectionAgent(BaseAgent):
             self.log_activity(f"Error processing reflection request: {e}", "ERROR")
             return self._fallback_response(user_message)
     
-    async def _generate_insights(self, user_message: str, mood: str, topic: str) -> List[str]:
-        """Generate thoughtful insights based on user's message"""
+    async def _generate_conversational_response(self, user_message: str, mood: str, conversation_context: List, session_id: str) -> str:
+        """Generate natural conversational response with context awareness"""
+        
+        # Build conversation history for context
+        context_text = ""
+        session_summary = self.conversation_summaries.get(session_id, "")
+        
+        if session_summary:
+            context_text += f"Previous conversation summary: {session_summary}\n\n"
+        
+        if conversation_context:
+            context_text += "Recent conversation:\n"
+            for turn in conversation_context[-5:]:  # Last 5 turns for context (increased from 3)
+                context_text += f"User: {turn['user']}\nYou: {turn['assistant']}\n"
+            context_text += "\nCurrent message:\n"
+        
         system_prompt = f"""
-        Kamu adalah seorang counselor yang bijaksana dan empatik. Berikan insights yang mendalam dan bermakna berdasarkan pesan pengguna.
+        Kamu adalah teman dekat yang bisa diajak curhat. Respond dengan natural kayak ngobrol di WhatsApp.
         
-        Mood yang terdeteksi: {mood}
-        Topik: {topic}
+        KARAKTERISTIK:
+        - Ngobrol santai, pake bahasa Indonesia casual
+        - Care dan supportive tapi ga formal
+        - Fokus dengerin dan validasi perasaan mereka
+        - Tanya follow-up yang natural buat bikin nyaman cerita
+        - JANGAN langsung kasih rekomendasi musik/hiburan kecuali user eksplisit minta
         
-        Tugas kamu:
-        1. Identifikasi tema-tema emosional dalam pesan
-        2. Berikan perspektif yang membangun dan mendukung
-        3. Bantu pengguna melihat situasi dari sudut pandang yang berbeda
-        4. Berikan validasi emosional yang tepat
+        GAYA BICARA:
+        - Kayak chat sama teman deket
+        - Pake kata "iya", "emang", "banget", "sih", "dong", etc
+        - Ga perlu panjang-panjang, 1-2 kalimat cukup
+        - Kalau udah ada context sebelumnya, sambung dari situ
+        - Tunjukkin empati yang genuine
+        - FOKUS pada percakapan, bukan rekomendasi
         
-        Berikan 2-3 insights dalam format JSON array dengan struktur:
-        ["insight 1", "insight 2", "insight 3"]
+        PENTING: HANYA suggest musik/hiburan kalau user bilang "minta rekomendasi" atau "cariin musik" atau hal serupa. Sebaliknya, tetap fokus jadi pendengar yang baik.
         
-        Gaya bicara: Hangat, mendukung, tidak menggurui, menggunakan bahasa Indonesia yang natural.
+        SITUASI SEKARANG:
+        - Mood: {mood}
+        - User butuh tempat curhat dan didengar
+        
+        Respond natural dalam 1-2 kalimat pendek yang caring.
         """
         
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Pesan dari pengguna: {user_message}"}
+            {"role": "user", "content": f"{context_text}User: {user_message}"}
         ]
         
         try:
             response = await groq_client.chat_completion(
                 messages=messages,
-                temperature=0.7,
-                max_tokens=300,
-                response_format={"type": "json_object"}
+                temperature=0.8,
+                max_tokens=200
             )
             
-            import json
-            insights_data = json.loads(response)
-            return insights_data.get("insights", [
-                "Setiap perasaan yang kamu rasakan itu valid dan penting",
-                "Kadang kita perlu mengambil jarak sejenak untuk melihat situasi dengan lebih jelas",
-                "Kamu sudah menunjukkan keberanian dengan merefleksikan perasaanmu"
-            ])
+            return response.strip()
             
         except Exception as e:
-            self.log_activity(f"Error generating insights: {e}", "ERROR")
-            return [
-                "Terima kasih sudah mau berbagi perasaanmu - itu langkah yang berani",
-                "Setiap pengalaman mengajarkan kita sesuatu tentang diri kita sendiri",
-                "Kamu tidak sendirian dalam menghadapi perasaan ini"
-            ]
+            self.log_activity(f"Error generating conversational response: {e}", "ERROR")
+            # Fallback responses based on mood
+            fallback_responses = {
+                "sad": "iya, kayaknya berat banget ya yang kamu rasain. mau cerita lebih lanjut?",
+                "angry": "kesel banget ya? boleh cerita kenapa sampe segitunya?",
+                "confused": "kayaknya lagi bingung banget nih. gimana ceritanya?",
+                "anxious": "sepertinya lagi khawatir ya? ada apa emang?",
+                "default": "kayaknya ada yang pengen diceritain nih. aku dengerin kok"
+            }
+            return fallback_responses.get(mood.lower(), fallback_responses["default"])
+    
+    async def _update_conversation_history(self, session_id: str, user_message: str, assistant_response: str):
+        """Update conversation history for context with summarization"""
+        if session_id not in self.conversation_history:
+            self.conversation_history[session_id] = []
+        
+        self.conversation_history[session_id].append({
+            "user": user_message,
+            "assistant": assistant_response
+        })
+        
+        # If conversation gets too long, summarize older parts
+        if len(self.conversation_history[session_id]) > 20:  # Increased from 10 to 20
+            await self._summarize_and_trim_conversation(session_id)
+    
+    async def _summarize_and_trim_conversation(self, session_id: str):
+        """Summarize older conversation and keep recent parts"""
+        conversation = self.conversation_history[session_id]
+        
+        # Take first 10 turns to summarize
+        old_turns = conversation[:10]
+        recent_turns = conversation[10:]
+        
+        # Create summary of old conversation
+        old_conversation_text = ""
+        for turn in old_turns:
+            old_conversation_text += f"User: {turn['user']}\nAssistant: {turn['assistant']}\n"
+        
+        summary_prompt = f"""
+        Summarize this conversation between a user and their supportive friend. 
+        Focus on:
+        - Main emotional themes and topics discussed
+        - Key events or situations mentioned
+        - User's feelings and emotional journey
+        - Important context for future conversation
+        
+        Keep it concise but meaningful in Indonesian, casual tone.
+        
+        Conversation to summarize:
+        {old_conversation_text}
+        """
+        
+        try:
+            summary = await groq_client.chat_completion(
+                messages=[{"role": "user", "content": summary_prompt}],
+                temperature=0.3,
+                max_tokens=300
+            )
+            
+            # Update or append to existing summary
+            existing_summary = self.conversation_summaries.get(session_id, "")
+            if existing_summary:
+                self.conversation_summaries[session_id] = f"{existing_summary}\n\nLanjutan: {summary}"
+            else:
+                self.conversation_summaries[session_id] = summary
+                
+            # Keep only recent 10 turns in active memory
+            self.conversation_history[session_id] = recent_turns
+            
+            self.log_activity(f"Conversation summarized for session {session_id}")
+            
+        except Exception as e:
+            self.log_activity(f"Error summarizing conversation: {e}", "ERROR")
+            # Fallback: just trim without summary
+            self.conversation_history[session_id] = conversation[-15:]
     
     async def _generate_reflection_questions(self, user_message: str, mood: str) -> List[str]:
-        """Generate thoughtful questions to encourage deeper reflection"""
+        """Generate casual questions to encourage sharing"""
         questions_by_mood = {
             "sad": [
-                "Apa yang paling kamu butuhkan saat ini untuk merasa lebih baik?",
-                "Kalau kamu bicara dengan sahabat yang mengalami hal yang sama, apa yang akan kamu katakan?",
-                "Adakah hal kecil yang masih bisa kamu syukuri hari ini?"
+                "kenapa itu sakit hatinya? boleh diceritain?",
+                "ada yang bikin kecewa ya? gimana ceritanya?",
+                "masih ada hal yang bikin seneng ga hari ini?"
             ],
             "anxious": [
-                "Dari semua kekhawatiran ini, mana yang benar-benar bisa kamu kontrol?",
-                "Kalau skenario terburuk benar-benar terjadi, apa yang akan kamu lakukan?",
-                "Apa yang akan kamu katakan pada dirimu sendiri 5 tahun yang lalu tentang situasi ini?"
+                "lagi khawatir apa sih? sharing dong",
+                "kayaknya overthinking nih, bener ga?",
+                "kalau misal terjadi hal terburuk, terus gimana menurutmu?"
             ],
             "angry": [
-                "Apa yang sebenarnya tersembunyi di balik rasa marah ini?",
-                "Bagaimana cara mengekspresikan perasaan ini dengan lebih konstruktif?",
-                "Apa yang kamu harapkan dari situasi atau orang yang membuatmu marah?"
+                "kesel banget ya? kenapa emangnya?",
+                "yang bikin sebel itu apa sih?",
+                "pengen marah-marah atau pengen cerita dulu?"
             ],
             "confused": [
-                "Kalau kamu harus menjelaskan situasi ini ke anak kecil, bagaimana kamu akan menyederhanakannya?",
-                "Apa nilai-nilai yang paling penting bagimu dalam mengambil keputusan ini?",
-                "Bagaimana perasaanmu tentang setiap pilihan yang tersedia?"
+                "bingung ya? emang lagi mikirin apa?",
+                "kayaknya dilema nih, gimana ceritanya?",
+                "kata hati kamu gimana? ikutin aja dulu"
             ],
             "grateful": [
-                "Siapa atau apa yang paling berperan dalam membuat kamu merasa bersyukur?",
-                "Bagaimana cara kamu bisa berbagi kebersyukuran ini dengan orang lain?",
-                "Apa yang bisa kamu lakukan untuk mempertahankan perasaan positif ini?"
+                "siapa yang paling berperan bikin kamu bersyukur?",
+                "gimana caranya berbagi kebersyukuran ini sama orang lain?",
+                "apa yang bisa kamu lakukan buat pertahanin perasaan positif ini?"
             ],
             "lonely": [
-                "Kapan terakhir kali kamu merasa benar-benar terhubung dengan seseorang?",
-                "Apa yang membuat seseorang menjadi 'rumah' bagi perasaanmu?",
-                "Bagaimana cara kamu bisa lebih terbuka untuk menerima dukungan dari orang lain?"
+                "lagi berasa sendirian ya? gimana ceritanya?",
+                "kapan terakhir kali chat sama temen? mau coba reach out ga?",
+                "kadang sendirian itu berat ya, tapi kamu ga sendirian kok"
             ],
             "default": [
-                "Apa yang paling ingin kamu ubah dari situasi saat ini?",
-                "Bagaimana perasaanmu tentang dirimu sendiri dalam menghadapi ini?",
-                "Apa yang kamu pelajari tentang dirimu dari pengalaman ini?"
+                "gimana perasaan kamu tentang hal ini?",
+                "mau cerita lebih lanjut ga?",
+                "ada yang pengen kamu sharing?"
             ]
         }
         
         return questions_by_mood.get(mood.lower(), questions_by_mood["default"])
     
     async def _generate_suggestions(self, mood: str, topic: str) -> List[Dict[str, str]]:
-        """Generate actionable suggestions for self-reflection"""
+        """Generate casual suggestions for self-reflection"""
         suggestions = {
             "journaling": {
-                "title": "Menulis Jurnal Perasaan",
-                "description": "Tulis 3 hal yang kamu rasakan hari ini dan mengapa",
+                "title": "Nulis di jurnal",
+                "description": "Tulis aja 3 hal yang kamu rasain hari ini, bebas mau gimana",
                 "time_needed": "10-15 menit",
-                "benefits": "Membantu mengorganisir pikiran dan perasaan"
+                "benefits": "Bikin pikiran jadi lebih clear"
             },
             "meditation": {
-                "title": "Meditasi Mindfulness",
-                "description": "Duduk tenang dan amati perasaanmu tanpa menilai",
+                "title": "Duduk tenang bentar",
+                "description": "Coba duduk diam dan perhatiin napas kamu aja",
                 "time_needed": "5-10 menit",
-                "benefits": "Meningkatkan kesadaran diri dan ketenangan"
+                "benefits": "Bikin hati tenang dan pikiran jernih"
             },
             "letter_writing": {
-                "title": "Menulis Surat untuk Diri Sendiri",
-                "description": "Tulis surat untuk dirimu sendiri dari perspektif sahabat terbaik",
+                "title": "Nulis surat buat diri sendiri",
+                "description": "Bayangin kamu lagi ngasih semangat ke diri sendiri",
                 "time_needed": "15-20 menit",
-                "benefits": "Mengembangkan self-compassion dan perspektif baru"
+                "benefits": "Jadi lebih sayang sama diri sendiri"
             },
             "gratitude": {
-                "title": "Praktik Syukur",
-                "description": "Tuliskan 5 hal yang kamu syukuri hari ini, sekecil apapun",
+                "title": "Inget hal-hal baik",
+                "description": "Tulis 5 hal yang bikin kamu seneng hari ini, sekecil apapun",
                 "time_needed": "5 menit",
-                "benefits": "Menggeser fokus ke hal-hal positif"
+                "benefits": "Mood jadi lebih positif"
             },
             "body_scan": {
-                "title": "Body Scan Meditation",
-                "description": "Perhatikan sensasi di setiap bagian tubuh dari kepala ke kaki",
+                "title": "Cek perasaan di badan",
+                "description": "Perhatiin gimana rasanya di kepala, dada, sampe kaki",
                 "time_needed": "10-15 menit",
-                "benefits": "Menghubungkan pikiran dan tubuh"
+                "benefits": "Nyambungin pikiran sama perasaan"
+            },
+            "music": {
+                "title": "Dengerin musik",
+                "description": "Pilih lagu yang sesuai sama mood kamu sekarang",
+                "time_needed": "10-30 menit", 
+                "benefits": "Bantu ekspresiin perasaan"
+            },
+            "walk": {
+                "title": "Jalan-jalan bentar",
+                "description": "Keluar rumah atau jalan di dalam ruangan aja",
+                "time_needed": "10-20 menit",
+                "benefits": "Bikin pikiran fresh"
             }
         }
         
         # Select appropriate suggestions based on mood
         mood_suggestions = {
-            "sad": ["journaling", "gratitude", "letter_writing"],
-            "anxious": ["meditation", "body_scan", "journaling"],
-            "angry": ["body_scan", "letter_writing", "meditation"],
-            "confused": ["journaling", "meditation", "letter_writing"],
-            "grateful": ["gratitude", "journaling", "letter_writing"],
-            "lonely": ["letter_writing", "gratitude", "journaling"]
+            "sad": ["journaling", "music", "letter_writing"],
+            "anxious": ["meditation", "walk", "body_scan"],
+            "angry": ["walk", "body_scan", "music"],
+            "confused": ["journaling", "walk", "letter_writing"],
+            "grateful": ["gratitude", "journaling", "music"],
+            "lonely": ["music", "letter_writing", "gratitude"]
         }
         
-        selected_keys = mood_suggestions.get(mood.lower(), ["journaling", "meditation", "gratitude"])
+        selected_keys = mood_suggestions.get(mood.lower(), ["journaling", "music", "walk"])
         return [suggestions[key] for key in selected_keys[:3]]
     
     async def _generate_follow_up_prompts(self, user_message: str, mood: str) -> List[str]:
         """Generate prompts to continue the conversation"""
         prompts = [
-            "Ceritakan lebih lanjut tentang perasaan ini...",
-            "Apa yang paling sulit dari situasi ini?",
-            "Bagaimana kamu biasanya menghadapi perasaan seperti ini?",
-            "Adakah seseorang yang bisa kamu ajak bicara tentang hal ini?",
-            "Apa yang kamu harapkan setelah berbagi perasaan ini?"
+            "cerita lebih lanjut yuk...",
+            "apa yang paling berat dari situasi ini?",
+            "biasanya kamu gimana sih kalau ngadepin perasaan kaya gini?",
+            "ada orang yang bisa diajak ngobrol ga tentang hal ini?",
+            "kamu berharap gimana setelah cerita ini?"
         ]
         
         mood_specific_prompts = {
             "sad": [
-                "Apa yang biasanya membuatmu merasa lebih baik?",
-                "Kapan terakhir kali kamu merasa bahagia? Apa yang membuatmu merasa seperti itu?"
+                "apa yang biasanya bikin kamu merasa lebih baik?",
+                "kapan terakhir kali kamu seneng banget? karena apa?"
             ],
             "anxious": [
-                "Apa skenario terbaik yang mungkin terjadi?",
-                "Bagaimana cara kamu menenangkan diri saat cemas menyerang?"
+                "apa skenario terbaik yang mungkin terjadi?",
+                "gimana cara kamu tenang-tenang kalau lagi cemas?"
             ],
             "angry": [
-                "Apa yang kamu inginkan dari orang atau situasi yang membuatmu marah?",
-                "Bagaimana cara kamu mengekspresikan marah dengan sehat?"
+                "kamu maunya gimana sih sama orang atau situasi yang bikin kesel?",
+                "gimana cara kamu ngungkapin marah tanpa nyakitin orang?"
             ]
         }
         
@@ -246,30 +332,13 @@ class ReflectionAgent(BaseAgent):
     def _fallback_response(self, user_message: str) -> Dict[str, Any]:
         """Fallback response when reflection generation fails"""
         return {
-            "reflection": {
-                "insights": [
-                    "Terima kasih sudah mau berbagi perasaanmu dengan aku",
-                    "Setiap perasaan yang kamu rasakan itu valid dan penting",
-                    "Kamu tidak sendirian dalam perjalanan ini"
-                ],
-                "questions": [
-                    "Apa yang paling kamu butuhkan saat ini?",
-                    "Bagaimana perasaanmu setelah berbagi hal ini?",
-                    "Apa satu hal kecil yang bisa kamu lakukan untuk dirimu sendiri hari ini?"
-                ],
-                "suggestions": [
-                    {
-                        "title": "Bernapas Dengan Sadar",
-                        "description": "Ambil napas dalam-dalam dan rasakan sensasinya",
-                        "time_needed": "2 menit",
-                        "benefits": "Grounding dan menenangkan"
-                    }
-                ]
-            },
+            "main_response": "makasih ya udah mau cerita sama aku. kayaknya lagi ada yang bikin berat pikiran nih. aku di sini kalau mau lanjut cerita",
             "conversation_type": "supportive",
             "emotional_context": "general",
-            "follow_up_prompts": [
-                "Ceritakan lebih lanjut jika kamu mau..."
-            ],
+            "session_context": {
+                "mood": "general",
+                "message_length": len(user_message),
+                "conversation_turns": 0
+            },
             "error": "Reflection generation fallback"
         }

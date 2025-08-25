@@ -12,6 +12,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(project_root)
 
 from backend.core.base_agent import BaseAgent
+from backend.core.groq_client import groq_client
 from config.settings import settings
 
 class EntertainmentAgent(BaseAgent):
@@ -23,6 +24,62 @@ class EntertainmentAgent(BaseAgent):
         self.tmdb_api_key = settings.tmdb_api_key
         self.giphy_base_url = "https://api.giphy.com/v1/gifs"
         self.tmdb_base_url = "https://api.themoviedb.org/3"
+    
+    async def _extract_entertainment_preferences_from_llm(self, message: str) -> dict:
+        """Extract specific entertainment preferences from user message using LLM"""
+        try:
+            system_prompt = """You are an expert at extracting entertainment preferences from user messages.
+Extract specific preferences and return ONLY a valid JSON object.
+
+Look for:
+- Country/language preferences (e.g., "Korea", "Korean", "Bollywood", "French")  
+- Genres (e.g., "action", "comedy", "horror", "romance")
+- Directors or actors mentioned
+- Time periods (e.g., "90s", "classic", "recent")
+
+Return JSON format:
+{
+    "country": "country name if mentioned",
+    "language": "language if mentioned", 
+    "genre": "genre if mentioned",
+    "director": "director if mentioned",
+    "actor": "actor if mentioned", 
+    "time_period": "time period if mentioned",
+    "keywords": ["any", "specific", "keywords"]
+}
+
+Use null for missing information."""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Extract preferences from: {message}"}
+            ]
+            
+            response = await groq_client.chat_completion(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=200,
+                response_format={"type": "json_object"}
+            )
+            
+            self.log_activity(f"LLM raw response: {response}")
+            
+            # Parse JSON response
+            import json
+            preferences = json.loads(response)
+            
+            # Clean null values
+            cleaned_preferences = {k: v for k, v in preferences.items() if v is not None and v != "null" and v != []}
+            
+            self.log_activity(f"Extracted preferences: {cleaned_preferences}")
+            return cleaned_preferences
+                
+        except json.JSONDecodeError as e:
+            self.log_activity(f"Failed to parse JSON: {e}, raw response: {response}")
+            return {}
+        except Exception as e:
+            self.log_activity(f"Error extracting preferences: {e}")
+            return {}
     
     async def process(self, user_message: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -41,11 +98,14 @@ class EntertainmentAgent(BaseAgent):
             }
         """
         try:
+            # Extract entertainment preferences using LLM
+            preferences_data = await self._extract_entertainment_preferences_from_llm(user_message)
+            
             mood = parameters.get("mood", "neutral")
             content_type = parameters.get("type", "mixed")
             intensity = parameters.get("intensity", "medium")
             
-            self.log_activity(f"Finding entertainment for mood: {mood}, type: {content_type}")
+            self.log_activity(f"Finding entertainment for mood: {mood}, type: {content_type}, preferences: {preferences_data}")
             
             content = {}
             total_items = 0
@@ -58,7 +118,7 @@ class EntertainmentAgent(BaseAgent):
             
             # Get movie/TV recommendations
             if content_type in ["mixed", "movies"]:
-                movies = await self._get_mood_movies(mood, intensity)
+                movies = await self._get_mood_movies(mood, intensity, preferences_data)
                 content["movies"] = movies
                 total_items += len(movies)
             
@@ -153,50 +213,39 @@ class EntertainmentAgent(BaseAgent):
             # Return empty list instead of failing completely
             return []
     
-    async def _get_mood_movies(self, mood: str, intensity: str, limit: int = 3) -> List[Dict]:
-        """Get movie recommendations based on mood from TMDb API"""
+    async def _get_mood_movies(self, mood: str, intensity: str, preferences: dict = None, limit: int = 3) -> List[Dict]:
+        """Get movie recommendations based on mood and preferences from TMDb API"""
         try:
             # Map mood to genre IDs (TMDb genre IDs)
             genre_id = self._mood_to_movie_genre(mood)
             
-            # Add variety by using different sorting methods based on mood
-            sort_options = [
-                "popularity.desc",
-                "vote_average.desc", 
-                "release_date.desc",
-                "revenue.desc"
-            ]
+            # Build search parameters
+            search_params = {
+                "api_key": self.tmdb_api_key,
+                "sort_by": self._get_sort_preference(mood),
+                "vote_average.gte": 6.0,  # Good ratings only
+                "page": 1,
+                "language": "en-US",
+                "vote_count.gte": 100  # Ensure movies have enough votes
+            }
             
-            # Use mood to determine sorting preference
-            if mood in ["excited", "energetic"]:
-                sort_by = "popularity.desc"
-            elif mood in ["thoughtful", "sad"]:
-                sort_by = "vote_average.desc"
-            elif mood in ["happy", "relaxed"]:
-                sort_by = "release_date.desc"
-            else:
+            # Add genre if no specific preferences override it
+            if not (preferences and preferences.get("genre")):
+                search_params["with_genres"] = genre_id
+            
+            # Apply extracted preferences
+            if preferences:
+                search_params = await self._apply_movie_preferences(search_params, preferences)
+            
+            # Random page for variety (unless specific search)
+            if not (preferences and any(preferences.get(k) for k in ["country", "language", "director", "actor"])):
                 import random
-                sort_by = random.choice(sort_options)
+                search_params["page"] = random.randint(1, 3)
             
-            # Random page to get different results
-            import random
-            page = random.randint(1, 3)  # Get from first 3 pages for variety
-            
-            self.log_activity(f"Searching movies for mood '{mood}' with genre {genre_id}, sort: {sort_by}, page: {page}")
+            self.log_activity(f"Searching movies with params: {search_params}")
             
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.tmdb_base_url}/discover/movie",
-                    params={
-                        "api_key": self.tmdb_api_key,
-                        "with_genres": genre_id,
-                        "sort_by": sort_by,
-                        "vote_average.gte": 6.0,  # Good ratings only
-                        "page": page,
-                        "language": "en-US",
-                        "vote_count.gte": 100  # Ensure movies have enough votes
-                    }
-                )
+                response = await client.get(f"{self.tmdb_base_url}/discover/movie", params=search_params)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -323,6 +372,116 @@ class EntertainmentAgent(BaseAgent):
         
         self.log_activity(f"Selected genre {selected_genre} for mood '{mood}' from options {genres}")
         return selected_genre
+    
+    def _get_sort_preference(self, mood: str) -> str:
+        """Get sorting preference based on mood"""
+        sort_options = [
+            "popularity.desc",
+            "vote_average.desc", 
+            "release_date.desc",
+            "revenue.desc"
+        ]
+        
+        # Use mood to determine sorting preference
+        if mood in ["excited", "energetic"]:
+            return "popularity.desc"
+        elif mood in ["thoughtful", "sad"]:
+            return "vote_average.desc"
+        elif mood in ["happy", "relaxed"]:
+            return "release_date.desc"
+        else:
+            import random
+            return random.choice(sort_options)
+    
+    async def _apply_movie_preferences(self, search_params: dict, preferences: dict) -> dict:
+        """Apply extracted preferences to movie search parameters"""
+        try:
+            # Handle country/language preferences
+            if preferences.get("country"):
+                country = preferences["country"].lower()
+                # Map common country names to TMDb region codes
+                country_mapping = {
+                    "korea": "KR", "korean": "KR", "south korea": "KR",
+                    "japan": "JP", "japanese": "JP",
+                    "india": "IN", "bollywood": "IN", "indian": "IN",
+                    "france": "FR", "french": "FR",
+                    "germany": "DE", "german": "DE",
+                    "italy": "IT", "italian": "IT",
+                    "spain": "ES", "spanish": "ES",
+                    "china": "CN", "chinese": "CN",
+                    "russia": "RU", "russian": "RU",
+                    "uk": "GB", "britain": "GB", "british": "GB",
+                    "usa": "US", "america": "US", "american": "US"
+                }
+                
+                if country in country_mapping:
+                    search_params["with_origin_country"] = country_mapping[country]
+                    self.log_activity(f"Applied country filter: {country} -> {country_mapping[country]}")
+            
+            # Handle language preferences
+            if preferences.get("language"):
+                language = preferences["language"].lower()
+                language_mapping = {
+                    "korean": "ko", "korea": "ko",
+                    "japanese": "ja", "japan": "ja", 
+                    "french": "fr", "france": "fr",
+                    "spanish": "es", "spain": "es",
+                    "german": "de", "germany": "de",
+                    "italian": "it", "italy": "it",
+                    "chinese": "zh", "china": "zh",
+                    "russian": "ru", "russia": "ru",
+                    "hindi": "hi", "bollywood": "hi",
+                    "english": "en"
+                }
+                
+                if language in language_mapping:
+                    search_params["with_original_language"] = language_mapping[language]
+                    self.log_activity(f"Applied language filter: {language} -> {language_mapping[language]}")
+            
+            # Handle genre preferences (override mood-based genre)
+            if preferences.get("genre"):
+                genre = preferences["genre"].lower()
+                genre_mapping = {
+                    "action": 28, "adventure": 12, "animation": 16, "comedy": 35,
+                    "crime": 80, "documentary": 99, "drama": 18, "family": 10751,
+                    "fantasy": 14, "history": 36, "horror": 27, "music": 10402,
+                    "mystery": 9648, "romance": 10749, "science fiction": 878,
+                    "sci-fi": 878, "thriller": 53, "war": 10752, "western": 37
+                }
+                
+                if genre in genre_mapping:
+                    search_params["with_genres"] = genre_mapping[genre]
+                    self.log_activity(f"Applied genre filter: {genre} -> {genre_mapping[genre]}")
+            
+            # Handle time period preferences
+            if preferences.get("time_period"):
+                period = preferences["time_period"].lower()
+                current_year = 2024
+                
+                if "90s" in period or "1990s" in period:
+                    search_params["primary_release_date.gte"] = "1990-01-01"
+                    search_params["primary_release_date.lte"] = "1999-12-31"
+                elif "2000s" in period:
+                    search_params["primary_release_date.gte"] = "2000-01-01"
+                    search_params["primary_release_date.lte"] = "2009-12-31"
+                elif "classic" in period:
+                    search_params["primary_release_date.lte"] = "1980-12-31"
+                elif "recent" in period or "new" in period:
+                    search_params["primary_release_date.gte"] = f"{current_year-2}-01-01"
+                
+                self.log_activity(f"Applied time period filter: {period}")
+            
+            # Handle keywords for additional filtering
+            if preferences.get("keywords"):
+                # For keywords, we might need to use search instead of discover
+                # But for now, let's log them for potential future enhancement
+                self.log_activity(f"Keywords noted for future enhancement: {preferences['keywords']}")
+            
+            return search_params
+            
+        except Exception as e:
+            self.log_activity(f"Error applying preferences: {e}")
+            return search_params
     
     def _fallback_response(self, user_message: str) -> Dict[str, Any]:
         """Fallback response when APIs are not available"""

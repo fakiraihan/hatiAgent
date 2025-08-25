@@ -75,7 +75,13 @@ class ChatMessage(BaseModel):
     user_id: str = "default"
     session_id: Optional[str] = None  # Will be auto-generated if not provided
     user_name: Optional[str] = None  # Optional, can be None
-    preferences: Dict[str, Any] = {}
+    preferences: Optional[Dict[str, Any]] = None  # Make it optional and handle conversion
+    
+    def __init__(self, **data):
+        # Handle case where preferences is sent as a list instead of dict
+        if 'preferences' in data and isinstance(data['preferences'], list):
+            data['preferences'] = {}  # Convert empty list to empty dict
+        super().__init__(**data)
 
 class ChatResponse(BaseModel):
     response: str
@@ -199,7 +205,7 @@ async def chat_enhanced_endpoint(request: Request):
             user_profile = db.create_or_update_user(
                 session_id=message.session_id,
                 name=message.user_name,
-                preferences=message.preferences
+                preferences=message.preferences or {}  # Handle None case
             )
             logger.info(f"User profile created/updated: {user_profile}")
         except Exception as db_error:
@@ -312,7 +318,7 @@ async def chat_endpoint(message: ChatMessage):
         db.create_or_update_user(
             session_id=message.session_id,
             name=message.user_name,
-            preferences=message.preferences
+            preferences=message.preferences or {}  # Handle None case
         )
         
         # Process message through manager agent
