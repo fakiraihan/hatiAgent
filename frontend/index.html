@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hati - Your Emotional AI Companion</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💜</text></svg>">
+</head>
+<body>
+    <!-- Optimized Floating Particles -->
+    <div class="particles">
+        <div class="particle" style="left: 15%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 40%; animation-delay: 2s;"></div>
+        <div class="particle" style="left: 65%; animation-delay: 4s;"></div>
+        <div class="particle" style="left: 85%; animation-delay: 1s;"></div>
+    </div>
+
+    <div class="chat-container">
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="header-left">
+                <div class="avatar">
+                    <i class="fas fa-heart pulse"></i>
+                </div>
+                <div class="header-info">
+                    <h1>Hati</h1>
+                    <span class="status" id="connectionStatus">Your Emotional AI Companion</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="header-stats">
+                    <div class="stat">
+                        <i class="fas fa-brain"></i>
+                        <span>Groq Powered</span>
+                    </div>
+                </div>
+                <button class="btn-icon" onclick="toggleSettings()">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot-message">
+                <div class="message-avatar">
+                    <i class="fas fa-heart"></i>
+                </div>
+                <div class="message-content">
+                    <p>Halo! Aku Hati, asisten AI yang siap membantu mengelola suasana hatimu. Ceritakan apa yang kamu rasakan hari ini? 😊</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div class="typing-indicator" id="typingIndicator" style="display: none;">
+            <div class="message-avatar">
+                <i class="fas fa-heart"></i>
+            </div>
+            <div class="typing-content">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Input -->
+        <div class="chat-input">
+            <div class="input-container">
+                <textarea 
+                    id="messageInput" 
+                    placeholder="Ketik pesan kamu di sini..." 
+                    rows="1"
+                    onkeypress="handleKeyPress(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+                <button id="sendButton" onclick="sendMessage()" disabled>
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="quick-actions">
+                <button class="quick-action" onclick="sendQuickMessage('Aku sedang sedih hari ini')">
+                    😢 Sedih
+                </button>
+                <button class="quick-action" onclick="sendQuickMessage('Aku merasa stress dengan pekerjaan')">
+                    😰 Stress
+                </button>
+                <button class="quick-action" onclick="sendQuickMessage('Aku butuh musik yang menenangkan')">
+                    🎵 Musik
+                </button>
+                <button class="quick-action" onclick="sendQuickMessage('Aku ingin tempat untuk relaksasi')">
+                    🧘 Relaksasi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <h3>Pengaturan</h3>
+            <button class="btn-close" onclick="toggleSettings()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="settings-content">
+            <div class="setting-item">
+                <label>Server Backend:</label>
+                <input type="text" id="backendUrl" value="http://localhost:8000" />
+            </div>
+            <div class="setting-item">
+                <label>Mode Debug:</label>
+                <input type="checkbox" id="debugMode" />
+            </div>
+            <div class="setting-item">
+                <button class="btn-test" onclick="testConnection()">Test Koneksi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Menghubungkan dengan Hati...</p>
+    </div>
+
+    <!-- Ambient Music Controls -->
+    <div class="ambient-controls">
+        <div class="ambient-toggle">
+            <button class="ambient-btn" id="ambientToggle" onclick="toggleAmbientMusic()">
+                <i class="fas fa-music"></i>
+                <span>Ambient Music</span>
+            </button>
+        </div>
+        <div class="ambient-options" id="ambientOptions" style="display: none;">
+            <div class="ambient-presets">
+                <button class="preset-btn active" data-preset="rain" onclick="setAmbientPreset('rain')">
+                    <i class="fas fa-cloud-rain"></i>
+                    <span>Rain</span>
+                </button>
+                <button class="preset-btn" data-preset="forest" onclick="setAmbientPreset('forest')">
+                    <i class="fas fa-tree"></i>
+                    <span>Forest</span>
+                </button>
+                <button class="preset-btn" data-preset="cafe" onclick="setAmbientPreset('cafe')">
+                    <i class="fas fa-coffee"></i>
+                    <span>Cafe</span>
+                </button>
+                <button class="preset-btn" data-preset="ocean" onclick="setAmbientPreset('ocean')">
+                    <i class="fas fa-water"></i>
+                    <span>Ocean</span>
+                </button>
+                <button class="preset-btn" data-preset="city" onclick="setAmbientPreset('city')">
+                    <i class="fas fa-city"></i>
+                    <span>City</span>
+                </button>
+            </div>
+            <div class="volume-control">
+                <i class="fas fa-volume-down"></i>
+                <input type="range" id="ambientVolume" min="0" max="100" value="30" onchange="setAmbientVolume(this.value)">
+                <i class="fas fa-volume-up"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Elements -->
+    <audio id="ambientAudio" loop preload="auto">
+        <source id="ambientSource" src="" type="audio/wav">
+    </audio>
+
+    <script src="script.js"></script>
+</body>
+</html>
