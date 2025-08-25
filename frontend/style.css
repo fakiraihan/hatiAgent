@@ -373,6 +373,38 @@ body::before {
     color: rgba(255, 255, 255, 0.8);
 }
 
+/* Separate Content Bubbles for Entertainment */
+.content-bubble {
+    max-width: 75%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    margin-top: 0.5rem;
+    margin-left: 3.5rem; /* Align with other bot messages */
+}
+
+.content-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.content-header i {
+    font-size: 1rem;
+}
+
+.movies-content,
+.gifs-content {
+    margin-bottom: 0.5rem;
+}
+
 /* Typing Indicator */
 .typing-indicator {
     display: flex;

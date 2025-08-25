@@ -426,7 +426,7 @@ class HatiChat {
             console.log('Has content?', !!specialistData?.content);
             
             if (specialistData && specialistData.content) {
-                // For entertainment responses, show movie/content cards
+                // For entertainment responses, show text first
                 let cleanedText = text;
                 
                 console.log('Entertainment processing - specialist data:', specialistData);
@@ -435,26 +435,88 @@ class HatiChat {
                 console.log('GIFs available:', specialistData.content.gifs);
                 
                 messageText.innerHTML = cleanedText;
+                content.appendChild(messageText);
                 
-                // Add movie cards if available
+                // Add movie cards in separate bubble if available
                 if (specialistData.content.movies && specialistData.content.movies.length > 0) {
                     console.log('Creating movie cards for:', specialistData.content.movies);
-                    const movieCardsHtml = this.createMovieCards(specialistData.content.movies);
-                    console.log('Movie cards HTML:', movieCardsHtml);
-                    messageText.innerHTML += movieCardsHtml;
-                } else {
-                    console.log('No movies found in specialist data');
+                    
+                    // Create movie bubble with proper content
+                    const movieBubble = document.createElement('div');
+                    movieBubble.className = 'message-content';
+                    
+                    const movieHeader = document.createElement('div');
+                    movieHeader.className = 'content-header';
+                    movieHeader.innerHTML = '<i class="fas fa-film"></i> Movies';
+                    movieHeader.style.cssText = 'font-weight: bold; margin-bottom: 10px; color: #667eea;';
+                    
+                    const movieContent = document.createElement('div');
+                    movieContent.className = 'movies-content';
+                    movieContent.innerHTML = this.createMovieCards(specialistData.content.movies);
+                    
+                    movieBubble.appendChild(movieHeader);
+                    movieBubble.appendChild(movieContent);
+                    
+                    // Create separate message for movies
+                    const movieMessageDiv = document.createElement('div');
+                    movieMessageDiv.className = 'message bot-message enhanced-message';
+                    
+                    const movieAvatar = document.createElement('div');
+                    movieAvatar.className = 'message-avatar';
+                    movieAvatar.innerHTML = '<i class="fas fa-film"></i>';
+                    
+                    movieMessageDiv.appendChild(movieAvatar);
+                    movieMessageDiv.appendChild(movieBubble);
+                    
+                    console.log('Adding movie bubble to chat...');
+                    const chatContainer = document.getElementById('chatMessages');
+                    if (chatContainer) {
+                        chatContainer.appendChild(movieMessageDiv);
+                        console.log('Movie bubble added successfully');
+                        this.scrollToBottom();
+                    } else {
+                        console.error('Chat container not found!');
+                    }
                 }
                 
-                // Add GIF cards if available
+                // Add GIF cards in separate bubble if available  
                 if (specialistData.content.gifs && specialistData.content.gifs.length > 0) {
                     console.log('Creating GIF cards for:', specialistData.content.gifs);
-                    const gifCardsHtml = this.createGifCards(specialistData.content.gifs);
-                    console.log('GIF cards HTML:', gifCardsHtml);
-                    messageText.innerHTML += gifCardsHtml;
-                } else {
-                    console.log('No GIFs found in specialist data');
+                    const gifBubble = this.createSeparateContentBubble('gifs', specialistData.content.gifs);
+                    
+                    // Create separate message for GIFs
+                    const gifMessageDiv = document.createElement('div');
+                    gifMessageDiv.className = 'message bot-message enhanced-message';
+                    
+                    const gifAvatar = document.createElement('div');
+                    gifAvatar.className = 'message-avatar';
+                    gifAvatar.innerHTML = '<i class="fas fa-images"></i>';
+                    
+                    gifMessageDiv.appendChild(gifAvatar);
+                    gifMessageDiv.appendChild(gifBubble);
+                    
+                    console.log('GIF message div created:', gifMessageDiv);
+                    
+                    // Store reference to this for setTimeout
+                    const self = this;
+                    
+                    // Add to chat after movie message (if exists) 
+                    const delay = specialistData.content.movies && specialistData.content.movies.length > 0 ? 600 : 300;
+                    setTimeout(() => {
+                        console.log('Adding GIF bubble to chat...');
+                        const chatContainer = document.getElementById('chatMessages');
+                        if (chatContainer) {
+                            chatContainer.appendChild(gifMessageDiv);
+                            console.log('GIF bubble added successfully');
+                            self.scrollToBottom();
+                        } else {
+                            console.error('Chat container not found!');
+                        }
+                    }, delay);
                 }
+                
+                // Skip the normal content.appendChild(messageText) since we already added it
+                return;
             } else {
                 console.log('Entertainment agent but no content data');
                 let processedText = this.processSpotifyLinks(text);
@@ -715,6 +777,53 @@ class HatiChat {
         processedText = processedText.replace(/\n/g, '<br>');
         
         return processedText;
+    }
+
+    createSeparateContentBubble(contentType, content) {
+        console.log(`Creating separate ${contentType} bubble for:`, content);
+        
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'message-content content-bubble';
+        console.log('Created bubbleDiv:', bubbleDiv);
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = `${contentType}-content`;
+        console.log('Created contentDiv:', contentDiv);
+        
+        // Add content type header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'content-header';
+        
+        if (contentType === 'movies') {
+            headerDiv.innerHTML = '<i class="fas fa-film"></i> Movies';
+            console.log('Setting movies header:', headerDiv.innerHTML);
+            const movieCardsHTML = this.createMovieCards(content);
+            console.log('Movie cards HTML from createMovieCards:', movieCardsHTML);
+            contentDiv.innerHTML = movieCardsHTML;
+            console.log('ContentDiv after setting innerHTML:', contentDiv);
+        } else if (contentType === 'gifs') {
+            headerDiv.innerHTML = '<i class="fas fa-images"></i> GIFs';
+            contentDiv.innerHTML = this.createGifCards(content);
+        }
+        
+        console.log('Appending headerDiv to bubbleDiv...');
+        bubbleDiv.appendChild(headerDiv);
+        console.log('Appending contentDiv to bubbleDiv...');
+        bubbleDiv.appendChild(contentDiv);
+        
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-time';
+        timestamp.textContent = new Date().toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        console.log('Appending timestamp to bubbleDiv...');
+        bubbleDiv.appendChild(timestamp);
+        
+        console.log('Final bubbleDiv:', bubbleDiv);
+        console.log('Final bubbleDiv HTML:', bubbleDiv.outerHTML);
+        return bubbleDiv;
     }
 
     showTypingIndicator() {
